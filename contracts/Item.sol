@@ -20,7 +20,7 @@ contract Item {
         require(paidWei == 0, "Item is already paid!");
         paidWei += msg.value;
         (bool success, ) = address(parentContract).call{value:msg.value}(abi.encodeWithSignature("triggerPayment(uint256)", index));
-        require(success, "Delivery did not work");
+        require(success, "Transaction wasn't successful, cancelling");
     }
 
     fallback () external {

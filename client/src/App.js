@@ -5,8 +5,31 @@ import getWeb3 from "./getWeb3";
 
 import "./App.css";
 
+const steps = {
+  0: "Created",
+  1: "Paid",
+  2: "Delivered",
+};
+
 class App extends Component {
-  state = { cost: 0, itemName: "exampleItem1", loaded: false };
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      cost: 0,
+      itemName: "exampleItem1",
+      loaded: false,
+      items: [],
+    };
+  }
+
+  addItem = (item) => {
+    this.setState((state) => {
+      const items = [...state.items, item];
+
+      return { items };
+    });
+  };
 
   componentDidMount = async () => {
     try {
@@ -28,6 +51,20 @@ class App extends Component {
         Item.networks[networkId] && Item.networks[networkId].address
       );
 
+      const index = await this.itemManager.methods.index().call();
+      if (index) {
+        for (let i = 0; i < index; i++) {
+          const item = await this.itemManager.methods.items(i).call();
+          console.log("hey", item);
+          const itemToAdd = {
+            identifier: item._identifier,
+            price: item._priceWei,
+            address: item[0],
+            step: item._step,
+          };
+          this.addItem(itemToAdd);
+        }
+      }
       this.listenToPaymentEvent();
       this.setState({ loaded: true });
     } catch (error) {
@@ -39,36 +76,69 @@ class App extends Component {
     }
   };
 
-  handleSubmit = async () => {
+  handleSubmit = async (e) => {
+    e.preventDefault();
     const { cost, itemName } = this.state;
-    console.log(itemName, cost, this.itemManager);
-    let result = await this.itemManager.methods.createItem(itemName, cost).send({ from: this.accounts[0] });
-    console.log(result);
-    alert("Send "+cost+" Wei to "+result.events.SupplyChainStep.returnValues._address);
+    console.log("creating item", itemName, cost, this.itemManager);
+    let result = await this.itemManager.methods
+      .createItem(itemName, cost)
+      .send({ from: this.accounts[0] });
+    console.log("yo", result);
+    const item = await this.itemManager.methods
+      .items(result.events.SupplyChainStep.returnValues._index)
+      .call();
+    this.addItem({
+      identifier: item._identifier,
+      price: item._priceWei,
+      address: item[0],
+      step: item._step,
+    });
+    alert(
+      "Send " +
+        cost +
+        " Wei to " +
+        result.events.SupplyChainStep.returnValues._address
+    );
   };
 
   listenToPaymentEvent = () => {
     let self = this;
-    this.itemManager.events.SupplyChainStep().on("data", async function(evt) {
-      if(evt.returnValues._step == 1) {
+    this.itemManager.events.SupplyChainStep().on("data", async function (evt) {
+      if (evt.returnValues._step == 1) {
         console.log(evt.returnValues);
-        let item = await self.itemManager.methods.items(evt.returnValues._index).call();
+        let item = await self.itemManager.methods
+          .items(evt.returnValues._index)
+          .call();
+        self.setState((state) => {
+          const items = state.items.map((it) => {
+            if (it.identifier == item._identifier) {
+              return {
+                ...it,
+                step: 1,
+              };
+            } else {
+              return it;
+            }
+          });
+
+          return { items };
+        });
         console.log(item);
         alert("Item " + item._identifier + " was paid, deliver it now!");
-      };
+      }
       console.log(evt);
     });
-  }
+  };
 
   handleInputChange = (event) => {
     const target = event.target;
-    const value = target.type === 'checkbox' ? target.checked : target.value;
+    const value = target.type === "checkbox" ? target.checked : target.value;
     const name = target.name;
 
     this.setState({
-      [name]: value
+      [name]: value,
     });
-  }
+  };
 
   render() {
     if (!this.state.loaded) {
@@ -96,6 +166,16 @@ class App extends Component {
         <button type="button" onClick={this.handleSubmit}>
           Create new Item
         </button>
+        <ul>
+          {this.state.items.map((item) => {
+            return (
+              <li>
+                Identifier: {item.identifier} - Price (wei): {item.price} -
+                Address: {item.address} - Status: {steps[item.step]}
+              </li>
+            );
+          })}
+        </ul>
       </div>
     );
   }
